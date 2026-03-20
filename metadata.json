@@ -1,0 +1,5 @@
+{
+  "name": "Song Me",
+  "description": "A real-time music lobby where users can join rooms, chat, and share music experiences.",
+  "requestFramePermissions": []
+}

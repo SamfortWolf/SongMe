@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user profile in the music lobby.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique Firebase Auth UID." },
+        "displayName": { "type": "string", "description": "The user's display name or nickname." },
+        "photoURL": { "type": "string", "description": "URL to the user's profile picture." },
+        "lastActive": { "type": "string", "format": "date-time", "description": "Last time the user was active." }
+      },
+      "required": ["uid", "displayName"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "A music lobby room.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "description": "The name of the room." },
+        "creatorId": { "type": "string", "description": "UID of the room creator." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["waiting", "playing", "finished"] },
+        "currentSongIndex": { "type": "integer" },
+        "songsPerPlayer": { "type": "integer" },
+        "shuffledPlaylist": { "type": "array", "items": { "type": "string" } },
+        "participants": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name", "creatorId", "createdAt", "status", "participants"]
+    },
+    "Participant": {
+      "title": "Participant",
+      "description": "Participant state within a room.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "points": { "type": "integer" },
+        "ready": { "type": "boolean" },
+        "songsCount": { "type": "integer" }
+      },
+      "required": ["uid", "displayName", "points", "ready", "songsCount"]
+    },
+    "Vote": {
+      "title": "Vote",
+      "description": "A user's guess for a song.",
+      "type": "object",
+      "properties": {
+        "voterId": { "type": "string" },
+        "votedForId": { "type": "string" },
+        "songId": { "type": "string" }
+      },
+      "required": ["voterId", "votedForId", "songId"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A chat message in a room.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "senderId", "senderName", "text", "createdAt"]
+    },
+    "Song": {
+      "title": "Song",
+      "description": "A song added to the room playlist.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "videoId": { "type": "string" },
+        "thumbnail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "videoId", "createdAt"]
+    },
+    "SongPrivate": {
+      "title": "SongPrivate",
+      "description": "Private metadata for a song, hidden until reveal.",
+      "type": "object",
+      "properties": {
+        "addedBy": { "type": "string" },
+        "addedByName": { "type": "string" }
+      },
+      "required": ["addedBy", "addedByName"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents."
+    },
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Room documents."
+    },
+    "/rooms/{roomId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages within a specific room."
+    },
+    "/rooms/{roomId}/participants/{userId}": {
+      "schema": "Participant",
+      "description": "Participant data in a room."
+    },
+    "/rooms/{roomId}/songs/{songId}": {
+      "schema": "Song",
+      "description": "Public song info."
+    },
+    "/rooms/{roomId}/songs_private/{songId}": {
+      "schema": "SongPrivate",
+      "description": "Private song info (who added it)."
+    },
+    "/rooms/{roomId}/votes/{voteId}": {
+      "schema": "Vote",
+      "description": "Votes for a song."
+    }
+  }
+}

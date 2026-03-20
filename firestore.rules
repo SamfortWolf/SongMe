@@ -1,0 +1,154 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (required)
+    //   - photoURL: string (optional)
+    //   - lastActive: timestamp (optional)
+    //
+    // Collection: rooms
+    // Document ID: {roomId}
+    // Fields:
+    //   - name: string (required)
+    //   - creatorId: string (required)
+    //   - createdAt: timestamp (required)
+    //   - currentSong: string (optional)
+    //   - participants: list (optional)
+    //
+    // Collection: rooms/{roomId}/messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - roomId: string (required)
+    //   - senderId: string (required)
+    //   - senderName: string (required)
+    //   - text: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName']) &&
+             data.uid is string &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 50;
+    }
+
+    function isValidRoom(data) {
+      return data.keys().hasAll(['name', 'creatorId', 'createdAt', 'status', 'participants']) &&
+             data.name is string &&
+             data.status in ['waiting', 'playing', 'finished'] &&
+             data.participants is list;
+    }
+
+    function isValidParticipant(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'points', 'ready', 'songsCount', 'lastSeen']) &&
+             data.uid is string && data.displayName is string &&
+             data.ready is bool;
+    }
+
+    function isValidVote(data) {
+      return data.keys().hasAll(['voterId', 'votedForId', 'songId']) &&
+             data.voterId == request.auth.uid;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['senderId', 'senderName', 'text', 'createdAt']) &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 1000 &&
+             data.senderId is string &&
+             data.senderName is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidSong(data) {
+      return data.keys().hasAll(['title', 'videoId', 'createdAt']) &&
+             data.title is string && data.videoId is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidSongPrivate(data) {
+      return data.keys().hasAll(['addedBy', 'addedByName']) &&
+             data.addedBy is string && data.addedByName is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /rooms/{roomId} {
+      allow read, list, get: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidRoom(request.resource.data) && request.resource.data.creatorId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.creatorId == request.auth.uid || 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants'])
+      );
+      allow delete: if isAuthenticated() && resource.data.creatorId == request.auth.uid;
+
+      match /participants/{userId} {
+        allow read, list, get: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidParticipant(request.resource.data) && userId == request.auth.uid;
+        allow update: if isAuthenticated() && (
+          userId == request.auth.uid || 
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.creatorId == request.auth.uid
+        );
+        allow delete: if isAuthenticated() && (userId == request.auth.uid || get(/databases/$(database)/documents/rooms/$(roomId)).data.creatorId == request.auth.uid);
+      }
+
+      match /messages/{messageId} {
+        allow read, list, get: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidMessage(request.resource.data) && request.resource.data.senderId == request.auth.uid;
+      }
+
+      match /songs/{songId} {
+        allow read, list, get: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidSong(request.resource.data);
+        allow delete: if isAuthenticated() && (
+          // Use a simpler check if possible, or ensure the user has access to the private doc
+          // For now, let's allow if the user is the creator or if they can prove they added it
+          // Since we can't easily prove it without get(), we keep get() but ensure it works
+          get(/databases/$(database)/documents/rooms/$(roomId)/songs_private/$(songId)).data.addedBy == request.auth.uid ||
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.creatorId == request.auth.uid
+        );
+      }
+
+      match /songs_private/{songId} {
+        allow read: if isAuthenticated() && (
+          request.auth.uid == resource.data.addedBy || 
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.status == 'finished' ||
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.creatorId == request.auth.uid ||
+          resource.data.revealed == true
+        );
+        allow create: if isAuthenticated() && isValidSongPrivate(request.resource.data) && request.resource.data.addedBy == request.auth.uid;
+        allow update: if isAuthenticated() && (resource.data.addedBy == request.auth.uid || get(/databases/$(database)/documents/rooms/$(roomId)).data.creatorId == request.auth.uid);
+        allow delete: if isAuthenticated() && (resource.data.addedBy == request.auth.uid || get(/databases/$(database)/documents/rooms/$(roomId)).data.creatorId == request.auth.uid);
+      }
+
+      match /votes/{voteId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidVote(request.resource.data);
+      }
+    }
+  }
+}

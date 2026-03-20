@@ -15,13 +15,17 @@ import {
   arrayUnion,
   arrayRemove,
   increment,
-  getDocFromServer
+  getDocFromServer,
+  getDocs
 } from 'firebase/firestore';
 import { 
   signInWithPopup, 
   onAuthStateChanged, 
   signOut,
-  User as FirebaseUser
+  User as FirebaseUser,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile
 } from 'firebase/auth';
 import { auth, db, googleProvider } from './firebase';
 import { 
@@ -43,7 +47,9 @@ import {
   Camera,
   X,
   ChevronRight,
-  RotateCcw
+  RotateCcw,
+  Link as LinkIcon,
+  Pencil
 } from 'lucide-react';
 import YouTube from 'react-youtube';
 import confetti from 'canvas-confetti';
@@ -219,7 +225,7 @@ const ParticipantsList = ({
                   </span>
                 ) : (
                   <span className="text-[9px] text-emerald-500 font-bold uppercase tracking-tighter">
-                    {Math.floor(p.points / 10)} Guessed
+                    {Math.floor((p.points || 0) / 10)} Guessed
                   </span>
                 )}
               </div>
@@ -463,13 +469,101 @@ const YouTubeSearch = ({ onAdd }: { onAdd: (video: any) => void }) => {
   );
 };
 
+const EditableProfile = ({ user, onUpdate }: { user: FirebaseUser, onUpdate: () => void }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [newName, setNewName] = useState(user.displayName || '');
+  const [loading, setLoading] = useState(false);
+
+  const handleSaveName = async () => {
+    if (!newName.trim() || newName === user.displayName) {
+      setIsEditing(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      await updateProfile(user, { displayName: newName });
+      await setDoc(doc(db, 'users', user.uid), { displayName: newName }, { merge: true });
+
+      // Broadcast displayName to ALL active rooms
+      const q = query(collection(db, 'rooms'), where('participants', 'array-contains', user.uid));
+      const roomsSnap = await getDocs(q);
+      const updatePromises = roomsSnap.docs.map(rDoc => 
+        updateDoc(doc(db, 'rooms', rDoc.id, 'participants', user.uid), { displayName: newName })
+      );
+      await Promise.all(updatePromises);
+      
+      setIsEditing(false);
+      onUpdate();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-4">
+      <div className="hidden sm:flex flex-col items-start">
+        {isEditing ? (
+          <div className="flex items-center gap-2">
+            <input 
+               autoFocus
+               value={newName} 
+               onChange={e => setNewName(e.target.value)} 
+               onKeyDown={e => e.key === 'Enter' && handleSaveName()}
+               className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm font-bold w-32 focus:outline-none focus:border-emerald-500 text-white"
+            />
+            <button onClick={handleSaveName} disabled={loading} className="text-emerald-500 hover:text-emerald-400 p-1">
+               {loading ? <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"/> : <CheckCircle2 className="w-4 h-4" />}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditing(true)} title="Измeнить Имя">
+            <span className="text-sm font-bold">{user.displayName || 'Anonymous'}</span>
+            <Pencil className="w-3 h-3 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        )}
+        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">Active Now</span>
+      </div>
+      <div title="Изменить Фото">
+        <AvatarUpload 
+          user={user} 
+          onUpdate={async (url) => {
+            try {
+              await updateProfile(user, { photoURL: url });
+              await setDoc(doc(db, 'users', user.uid), { photoURL: url }, { merge: true });
+              
+              // Broadcast photoURL to ALL active rooms
+              const q = query(collection(db, 'rooms'), where('participants', 'array-contains', user.uid));
+              const roomsSnap = await getDocs(q);
+              const updatePromises = roomsSnap.docs.map(rDoc => 
+                updateDoc(doc(db, 'rooms', rDoc.id, 'participants', user.uid), { photoURL: url })
+              );
+              await Promise.all(updatePromises);
+
+              onUpdate();
+            } catch (e) {
+              console.error(e);
+            }
+          }} 
+        />
+      </div>
+    </div>
+  );
+};
+
 const Login = () => {
-  const handleLogin = async () => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleGoogleLogin = async () => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
       
-      // Save user profile
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         displayName: user.displayName || 'Anonymous',
@@ -477,7 +571,50 @@ const Login = () => {
         lastActive: serverTimestamp()
       }, { merge: true });
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Google Login error:', error);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    setLoading(true);
+    setError('');
+    
+    try {
+      let result;
+      if (isLogin) {
+        result = await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        result = await createUserWithEmailAndPassword(auth, email, password);
+      }
+      
+      const user = result.user;
+      // Fetch existing user to preserve displayName if login
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (!userDoc.exists()) {
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          displayName: email.split('@')[0],
+          photoURL: '',
+          lastActive: serverTimestamp()
+        }, { merge: true });
+      } else {
+        await updateDoc(doc(db, 'users', user.uid), {
+          lastActive: serverTimestamp()
+        });
+      }
+    } catch (err: any) {
+      console.error('Email Auth Error:', err);
+      if (err.code === 'auth/email-already-in-use') {
+        setError('User with this email already exists.');
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('Invalid email or password.');
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -492,13 +629,52 @@ const Login = () => {
           <div className="w-20 h-20 bg-emerald-500 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
             <Music className="w-10 h-10 text-black" />
           </div>
-          <h1 className="text-5xl font-bold tracking-tighter">MUSIC LOBBY</h1>
+          <h1 className="text-5xl font-bold tracking-tighter">SONG ME</h1>
           <p className="text-zinc-400 text-lg">Connect, chat, and share music in real-time.</p>
         </div>
 
+        <form onSubmit={handleEmailAuth} className="space-y-4 bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800">
+          {error && <div className="text-red-500 text-xs font-bold bg-red-500/10 p-3 rounded-xl border border-red-500/20">{error}</div>}
+          <input
+            type="email"
+            placeholder="Email..."
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 transition-colors"
+            required
+          />
+          <input
+            type="password"
+            placeholder="Password..."
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 transition-colors"
+            required
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-4 bg-emerald-500 text-black font-bold rounded-xl hover:bg-emerald-400 disabled:opacity-50 transition-colors"
+          >
+            {loading ? 'Loading...' : (isLogin ? 'Login' : 'Register')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-zinc-500 text-xs font-bold hover:text-emerald-500 uppercase tracking-widest transition-colors"
+          >
+            {isLogin ? 'Need an account? Register' : 'Already have an account? Login'}
+          </button>
+        </form>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-zinc-800"></div></div>
+          <div className="relative flex justify-center text-xs"><span className="bg-[#050505] px-2 text-zinc-500 uppercase tracking-widest">Или</span></div>
+        </div>
+
         <button
-          onClick={handleLogin}
-          className="w-full py-4 bg-white text-black font-bold rounded-xl hover:bg-emerald-400 transition-colors flex items-center justify-center gap-3 text-lg"
+          onClick={handleGoogleLogin}
+          className="w-full py-4 bg-white text-black font-bold rounded-xl hover:bg-zinc-200 transition-colors flex items-center justify-center gap-3 text-lg"
         >
           <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
           Continue with Google
@@ -516,15 +692,16 @@ const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Ro
   const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'rooms'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'rooms'), where('participants', 'array-contains', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const roomsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Room));
+      roomsData.sort((a,b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
       setRooms(roomsData);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'rooms');
     });
     return unsubscribe;
-  }, []);
+  }, [user.uid]);
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -613,8 +790,11 @@ const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Ro
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {rooms.map((room) => (
+      {(() => {
+        const myRooms = rooms.filter(r => r.creatorId === user.uid);
+        const joinedRooms = rooms.filter(r => r.creatorId !== user.uid);
+
+        const renderRoom = (room: Room) => (
           <motion.div
             key={room.id}
             layout
@@ -682,13 +862,36 @@ const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Ro
             </div>
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl rounded-full -mr-16 -mt-16 group-hover:bg-emerald-500/10 transition-colors" />
           </motion.div>
-        ))}
-        {rooms.length === 0 && (
-          <div className="col-span-full py-20 text-center text-zinc-500 border-2 border-dashed border-zinc-800 rounded-3xl">
-            No active rooms. Create one to get started!
+        );
+
+        return (
+          <div className="space-y-8">
+            {myRooms.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-xl font-bold tracking-tight text-emerald-500">My Rooms</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {myRooms.map(renderRoom)}
+                </div>
+              </div>
+            )}
+            
+            {joinedRooms.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-xl font-bold tracking-tight text-zinc-500">Joined Rooms</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {joinedRooms.map(renderRoom)}
+                </div>
+              </div>
+            )}
+
+            {rooms.length === 0 && (
+              <div className="py-20 text-center text-zinc-500 border-2 border-dashed border-zinc-800 rounded-3xl">
+                No active rooms. Create one to get started!
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })()}
     </div>
   );
 };
@@ -716,15 +919,24 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
     const setupParticipant = async () => {
       const pRef = doc(db, 'rooms', initialRoom.id, 'participants', user.uid);
       try {
-        await setDoc(pRef, {
-          uid: user.uid,
-          displayName: user.displayName || 'Anonymous',
-          photoURL: user.photoURL,
-          points: 0,
-          ready: false,
-          songsCount: 0,
-          lastSeen: serverTimestamp()
-        }, { merge: true });
+        const pSnap = await getDoc(pRef);
+        if (!pSnap.exists()) {
+          await setDoc(pRef, {
+            uid: user.uid,
+            displayName: user.displayName || 'Anonymous',
+            photoURL: user.photoURL,
+            points: 0,
+            ready: false,
+            songsCount: 0,
+            lastSeen: serverTimestamp()
+          });
+        } else {
+          await updateDoc(pRef, {
+            displayName: user.displayName || 'Anonymous',
+            photoURL: user.photoURL,
+            lastSeen: serverTimestamp()
+          });
+        }
 
         await updateDoc(doc(db, 'rooms', initialRoom.id), {
           participants: arrayUnion(user.uid)
@@ -955,6 +1167,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
 
       if (!authorId) {
         console.error("Could not find author for song:", currentSong.id);
+        showNotification("Error: Could not find who added this song!", "error");
         return;
       }
 
@@ -974,24 +1187,33 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
         shuffledPlaylist: newPlaylist
       });
 
-      console.log("Updating song in subcollection...");
-      await updateDoc(doc(db, 'rooms', room.id, 'songs', currentSong.id), {
-        revealed: true
-      });
+      // Мы удаляем updateDoc для подколлекции 'songs', так как облачные правила 
+      // (которые мы не можем изменить без деплоя) запрещают её обновление,
+      // а фронтенду достаточно обновленного shuffledPlaylist! 
 
       // Award points
       const winners = votes.filter(v => v.votedForId === authorId);
       console.log(`Revealing author: ${authorId}. Found ${winners.length} winners.`);
       
+      if (winners.length === 0) {
+        showNotification("No one guessed correctly! 😢", "error");
+      } else {
+        showNotification(`${winners.length} players guessed correctly! 🎉`, "success");
+      }
+
       for (const win of winners) {
         const pRef = doc(db, 'rooms', room.id, 'participants', win.voterId);
         console.log(`Awarding 10 points to ${win.voterId}`);
-        await updateDoc(pRef, { points: increment(10) });
+        // Fetch current points explicitly as fallback
+        const voterDoc = await getDoc(pRef);
+        const currentPoints = voterDoc.exists() ? (voterDoc.data().points || 0) : 0;
+        await updateDoc(pRef, { points: currentPoints + 10 });
       }
 
       if (winners.length > 0) confetti();
     } catch (error) {
       console.error("Error in handleReveal:", error);
+      showNotification(`Ошибка: ${error instanceof Error ? error.message : "Неизвестная ошибка"}`, "error");
       handleFirestoreError(error, OperationType.UPDATE, `rooms/${room.id}`);
     }
   };
@@ -1027,7 +1249,21 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
             <button onClick={onLeave} className="p-2 hover:bg-zinc-800 rounded-full transition-colors">
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h2 className="font-bold truncate">{room.name}</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="font-bold truncate">{room.name}</h2>
+              {room.status === 'waiting' && (
+                <button 
+                  onClick={() => {
+                    const inviteUrl = `${window.location.origin}?room=${room.id}`;
+                    navigator.clipboard.writeText(inviteUrl);
+                    showNotification("Ссылка скопирована!", "success");
+                  }}
+                  className="p-1 px-2 border border-emerald-500/30 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-lg transition-colors flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest"
+                >
+                  <LinkIcon className="w-3 h-3" /> Пригласить
+                </button>
+              )}
+            </div>
           </div>
           <AvatarUpload user={user} onUpdate={async (url) => {
             try {
@@ -1247,7 +1483,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                 </div>
 
                 <div className="max-w-md mx-auto space-y-4">
-                  {participants.sort((a, b) => b.points - a.points).map((p, i) => (
+                  {[...participants].sort((a, b) => (b.points || 0) - (a.points || 0)).map((p, i) => (
                     <motion.div 
                       key={p.uid}
                       initial={{ opacity: 0, x: -20 }}
@@ -1264,8 +1500,8 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                         <span className="font-bold">{p.displayName}</span>
                       </div>
                       <div className="text-right">
-                        <p className="text-emerald-500 font-black">{p.points} pts</p>
-                        <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">{Math.floor(p.points / 10)} Guessed</p>
+                        <p className="text-emerald-500 font-black">{p.points || 0} pts</p>
+                        <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">{Math.floor((p.points || 0) / 10)} Guessed</p>
                       </div>
                     </motion.div>
                   ))}
@@ -1335,10 +1571,29 @@ export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
+  const [updateTick, setUpdateTick] = useState(0);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+      
+      if (u) {
+        const params = new URLSearchParams(window.location.search);
+        const roomId = params.get('room');
+        if (roomId) {
+          try {
+            const rDoc = await getDoc(doc(db, 'rooms', roomId));
+            if (rDoc.exists()) {
+              setCurrentRoom({ id: rDoc.id, ...rDoc.data() } as Room);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+          // Remove query param silently
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+      
       setLoading(false);
     });
     return unsubscribe;
@@ -1398,18 +1653,10 @@ export default function App() {
                 <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
                   <Music className="w-6 h-6 text-black" />
                 </div>
-                <h1 className="text-xl font-bold tracking-tighter">MUSIC LOBBY</h1>
+                <h1 className="text-xl font-bold tracking-tighter">SONG ME</h1>
               </div>
               <div className="flex items-center gap-4">
-                <div className="hidden sm:flex flex-col items-end">
-                  <span className="text-sm font-bold">{user.displayName}</span>
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">Active Now</span>
-                </div>
-                <img 
-                  src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} 
-                  className="w-10 h-10 rounded-full border border-zinc-800"
-                  alt="Profile"
-                />
+                <EditableProfile user={user} onUpdate={() => setUpdateTick(t => t + 1)} />
                 <button 
                   onClick={() => signOut(auth)}
                   className="p-2 hover:bg-zinc-900 rounded-full text-zinc-500 hover:text-white transition-colors"
@@ -1428,3 +1675,5 @@ export default function App() {
     </div>
   );
 }
+
+

@@ -124,6 +124,7 @@ service cloud.firestore {
       match /songs/{songId} {
         allow read, list, get: if isAuthenticated();
         allow create: if isAuthenticated() && isValidSong(request.resource.data);
+        allow update: if isAuthenticated() && get(/databases/$(database)/documents/rooms/$(roomId)).data.creatorId == request.auth.uid;
         allow delete: if isAuthenticated() && (
           // Use a simpler check if possible, or ensure the user has access to the private doc
           // For now, let's allow if the user is the creator or if they can prove they added it

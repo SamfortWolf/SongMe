@@ -1,3 +1,7 @@
+import 'dotenv/config'; // Загружает .env по умолчанию
+import * as dotenv from 'dotenv';
+dotenv.config({ path: '.env.local', override: true }); // Дополнительно загружает и переписывает из .env.local
+
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";

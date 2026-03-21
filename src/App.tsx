@@ -109,9 +109,10 @@ interface Room {
   createdAt: any;
   status: 'waiting' | 'playing' | 'finished';
   currentSongIndex: number;
-  songsPerPlayer: number;
-  shuffledPlaylist: Song[];
-  participants: string[];
+  songsPerPlayer?: number;
+  shuffledPlaylist?: any[];
+  participants?: string[];
+  revealMode?: 'every_round' | 'end_of_game';
 }
 
 interface Participant {
@@ -687,7 +688,8 @@ const Login = () => {
 const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Room) => void }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [newRoomName, setNewRoomName] = useState('');
-  const [songsPerPlayer, setSongsPerPlayer] = useState(2);
+  const [songsPerPlayer, setSongsPerPlayer] = useState<number | ''>(2);
+  const [revealMode, setRevealMode] = useState<'every_round' | 'end_of_game'>('every_round');
   const [isCreating, setIsCreating] = useState(false);
   const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
 
@@ -714,7 +716,8 @@ const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Ro
         createdAt: serverTimestamp(),
         status: 'waiting',
         currentSongIndex: 0,
-        songsPerPlayer: songsPerPlayer,
+        songsPerPlayer: songsPerPlayer === '' ? 2 : songsPerPlayer,
+        revealMode,
         shuffledPlaylist: [],
         participants: [user.uid]
       });
@@ -747,31 +750,57 @@ const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Ro
             className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 space-y-4 overflow-hidden"
           >
             <h3 className="text-lg font-semibold">Create New Room</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Room Name</label>
-                <input 
-                  type="text"
-                  placeholder="Room Name..."
-                  value={newRoomName}
-                  onChange={(e) => setNewRoomName(e.target.value)}
-                  className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500"
-                  autoFocus
-                />
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Room Name</label>
+                  <input 
+                    type="text"
+                    placeholder="Room Name..."
+                    value={newRoomName}
+                    onChange={(e) => setNewRoomName(e.target.value)}
+                    className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500"
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Songs per Player</label>
+                  <input 
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={songsPerPlayer}
+                    onChange={(e) => {
+                      if (e.target.value === '') {
+                        setSongsPerPlayer('');
+                        return;
+                      }
+                      const val = parseInt(e.target.value);
+                      setSongsPerPlayer(isNaN(val) ? '' : val);
+                    }}
+                    className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
+              
               <div className="space-y-2">
-                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Songs per Player</label>
-                <input 
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={songsPerPlayer}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value);
-                    setSongsPerPlayer(isNaN(val) ? 1 : val);
-                  }}
-                  className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500"
-                />
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Reveal Results</label>
+                <div className="flex gap-2 bg-black border border-zinc-800 rounded-xl p-1">
+                  <button 
+                    type="button"
+                    onClick={() => setRevealMode('every_round')}
+                    className={cn("flex-1 py-3 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors", revealMode === 'every_round' ? "bg-zinc-800 text-white shadow-lg" : "text-zinc-500 hover:text-zinc-300")}
+                  >
+                    Every Round
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setRevealMode('end_of_game')}
+                    className={cn("flex-1 py-3 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors", revealMode === 'end_of_game' ? "bg-zinc-800 text-white shadow-lg" : "text-zinc-500 hover:text-zinc-300")}
+                  >
+                    End of Game
+                  </button>
+                </div>
               </div>
             </div>
             <div className="flex gap-4 pt-2">
@@ -911,6 +940,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
   const [enrichedSongs, setEnrichedSongs] = useState<Song[]>([]);
   const [myPrivateSongs, setMyPrivateSongs] = useState<Record<string, any>>({});
   const [votes, setVotes] = useState<Vote[]>([]);
+  const [allVotes, setAllVotes] = useState<Vote[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
@@ -1069,6 +1099,15 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
       handleFirestoreError(error, OperationType.LIST, `rooms/${initialRoom.id}/votes`);
     });
   }, [room.status, room.currentSongIndex, room.shuffledPlaylist, initialRoom.id]);
+
+  // Fetch all votes on finish
+  useEffect(() => {
+    if (room.status === 'finished') {
+      getDocs(collection(db, 'rooms', initialRoom.id, 'votes')).then(snap => {
+        setAllVotes(snap.docs.map(doc => doc.data() as Vote));
+      }).catch(err => console.error("Could not load all votes:", err));
+    }
+  }, [room.status, initialRoom.id]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1240,7 +1279,46 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
 
   const handleNext = async () => {
     try {
-      if (room.currentSongIndex + 1 < room.shuffledPlaylist.length) {
+      if (room.revealMode === 'end_of_game') {
+        const currentSong = room.shuffledPlaylist?.[room.currentSongIndex];
+        if (currentSong && !currentSong.revealed) {
+          const pDoc = await getDoc(doc(db, 'rooms', room.id, 'songs_private', currentSong.id));
+          const authorId = pDoc.data()?.addedBy;
+          
+          if (authorId) {
+            const winners = votes.filter(v => v.songId === currentSong.id && v.votedForId === authorId);
+            for (const win of winners) {
+              const pRef = doc(db, 'rooms', room.id, 'participants', win.voterId);
+              const voterDoc = await getDoc(pRef);
+              const currentPoints = voterDoc.exists() ? (voterDoc.data().points || 0) : 0;
+              await updateDoc(pRef, { points: currentPoints + 10 });
+            }
+            
+            const newPlaylist = [...room.shuffledPlaylist!];
+            newPlaylist[room.currentSongIndex] = {
+              ...newPlaylist[room.currentSongIndex],
+              revealed: true,
+              addedBy: authorId,
+              addedByName: pDoc.data()?.addedByName
+            };
+
+            if (room.currentSongIndex + 1 < room.shuffledPlaylist!.length) {
+              await updateDoc(doc(db, 'rooms', room.id), {
+                currentSongIndex: increment(1),
+                shuffledPlaylist: newPlaylist
+              });
+            } else {
+              await updateDoc(doc(db, 'rooms', room.id), {
+                status: 'finished',
+                shuffledPlaylist: newPlaylist
+              });
+            }
+            return;
+          }
+        }
+      }
+
+      if (room.currentSongIndex + 1 < (room.shuffledPlaylist?.length || 0)) {
         await updateDoc(doc(db, 'rooms', room.id), {
           currentSongIndex: increment(1)
         });
@@ -1284,7 +1362,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                   }}
                   className="p-1 px-2 border border-emerald-500/30 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-lg transition-colors flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest"
                 >
-                  <LinkIcon className="w-3 h-3" /> Пригласить
+                  <LinkIcon className="w-3 h-3" /> Invite
                 </button>
               )}
             </div>
@@ -1320,7 +1398,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
               onClick={() => setMobileTab('main')}
               className="w-full py-4 border-2 border-dashed border-zinc-800 rounded-2xl text-zinc-500 hover:text-white hover:border-emerald-500 transition-colors flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-xs"
             >
-              <Plus className="w-5 h-5" /> Добавить песню
+              <Plus className="w-5 h-5" /> Add Song
             </button>
           </div>}
           <Playlist 
@@ -1450,7 +1528,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                   <div className="flex flex-col items-center gap-4">
                     {room.creatorId === user.uid && allVoted && (
                       <div className="flex justify-center">
-                        {!currentSong.revealed ? (
+                        {!currentSong.revealed && room.revealMode !== 'end_of_game' ? (
                           <button 
                             onClick={handleReveal}
                             className="px-12 py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-black uppercase tracking-widest rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-[0_0_30px_rgba(16,185,129,0.3)]"
@@ -1508,41 +1586,90 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
             ) : (
               <motion.div 
                 key="finished"
-                className="text-center py-20 space-y-8"
+                className="text-center py-6 space-y-4 flex-1 flex flex-col min-h-0 h-full"
               >
-                <div className="space-y-4">
-                  <div className="w-20 h-20 bg-emerald-500 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
-                    <Trophy className="w-10 h-10 text-black" />
+                <div className="space-y-3 shrink-0">
+                  <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+                    <Trophy className="w-6 h-6 text-black" />
                   </div>
-                  <h1 className="text-6xl font-black italic uppercase tracking-tighter">Game Over</h1>
+                  <h1 className="text-3xl font-black italic uppercase tracking-tighter">Game Over</h1>
                 </div>
 
-                <div className="max-w-md mx-auto space-y-4">
+                <div className="mx-auto flex flex-wrap justify-center gap-3 shrink-0 max-w-2xl px-4">
                   {[...participants].sort((a, b) => (b.points || 0) - (a.points || 0)).map((p, i) => (
                     <motion.div 
                       key={p.uid}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: i * 0.1 }}
                       className={cn(
-                        "flex items-center justify-between p-4 rounded-2xl border",
+                        "flex flex-col items-center justify-center p-3 rounded-2xl border w-24",
                         i === 0 ? "bg-emerald-500/10 border-emerald-500" : "bg-zinc-900 border-zinc-800"
                       )}
                     >
-                      <div className="flex items-center gap-4">
-                        <span className={cn("text-2xl font-black", i === 0 ? "text-emerald-500" : "text-zinc-700")}>#{i + 1}</span>
-                        <img src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} className="w-10 h-10 rounded-full object-cover" alt="" />
-                        <span className="font-bold">{p.displayName}</span>
-                      </div>
-                      <div className="text-right flex flex-col items-end justify-center">
-                        <p className="text-emerald-500 font-black text-2xl leading-none">{Math.floor((p.points || 0) / 10)}</p>
-                        <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest mt-1">Guessed</p>
+                      <img src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} className="w-10 h-10 rounded-full object-cover mb-2" alt="" />
+                      <span className="text-[10px] font-bold truncate w-full text-center">{p.displayName}</span>
+                      <div className="flex items-center gap-1 mt-1">
+                        <span className={cn("font-black text-lg", i === 0 ? "text-emerald-500" : "text-zinc-400")}>{Math.floor((p.points || 0) / 10)}</span>
+                        <span className="text-[8px] text-zinc-500 uppercase font-bold">PTS</span>
                       </div>
                     </motion.div>
                   ))}
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-4 justify-center pt-8">
+                <div className="flex-1 w-full mx-auto max-w-5xl overflow-auto shrink min-h-[200px] border border-zinc-800 rounded-2xl bg-[#050505] custom-scrollbar">
+                  <table className="w-full text-left border-collapse text-sm">
+                    <thead className="sticky top-0 bg-[#050505] z-10 border-b border-zinc-800 shadow-xl">
+                      <tr>
+                        <th className="p-4 border-r border-zinc-800 font-bold uppercase tracking-widest text-[10px] text-zinc-500 min-w-[150px]">Song</th>
+                        {participants.map(p => (
+                          <th key={p.uid} className="p-2 border-zinc-800 text-center min-w-[80px]">
+                            <img src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} className="w-6 h-6 rounded-full mx-auto" alt="" />
+                            <div className="text-[9px] font-bold text-zinc-500 truncate mt-1 max-w-[80px] px-1">{p.displayName}</div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {room.shuffledPlaylist?.map((song, idx) => (
+                        <tr key={song.id} className="hover:bg-zinc-800/20 transition-colors border-b border-zinc-800/50">
+                          <td className="p-3 border-r border-zinc-800/50 bg-zinc-900/10">
+                            <div className="flex items-center gap-3">
+                              <span className="text-zinc-600 font-black text-[10px] w-4 text-center">{idx + 1}</span>
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-bold text-xs truncate max-w-[120px] sm:max-w-[200px]">{song.title}</span>
+                                <span className="text-[9px] text-emerald-500/80 uppercase font-bold mt-0.5 truncate">Added by: <span className="text-emerald-500">{song.addedByName || 'Unknown'}</span></span>
+                              </div>
+                            </div>
+                          </td>
+                          {participants.map(p => {
+                            const vote = allVotes.find(v => v.songId === song.id && v.voterId === p.uid);
+                            const votedForPlayer = participants.find(part => part.uid === vote?.votedForId);
+                            const isCorrect = vote && vote.votedForId === song.addedBy;
+                            
+                            return (
+                              <td key={p.uid} className="p-2 text-center relative bg-zinc-900/5">
+                                {vote && votedForPlayer ? (
+                                  <div className="flex flex-col items-center justify-center">
+                                    <div className="relative">
+                                      <img src={votedForPlayer.photoURL || `https://ui-avatars.com/api/?name=${votedForPlayer.displayName}`} className={cn("w-6 h-6 rounded-full mx-auto object-cover", isCorrect ? "ring-2 ring-offset-1 ring-offset-[#050505] ring-emerald-500" : "")} alt="" />
+                                      {isCorrect && <CheckCircle2 className="w-3 h-3 text-emerald-500 absolute -bottom-1 -right-1 bg-[#050505] rounded-full" />}
+                                    </div>
+                                    <span className="text-[8px] font-bold text-zinc-400 mt-1.5 truncate max-w-[60px]">{votedForPlayer.displayName}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-zinc-700 text-xs">-</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4 justify-center pt-2 pb-10 shrink-0">
                   {room.creatorId === user.uid && (
                     <button 
                       onClick={() => updateDoc(doc(db, 'rooms', room.id), { status: 'waiting', currentSongIndex: 0, shuffledPlaylist: [] })}

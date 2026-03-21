@@ -1483,14 +1483,17 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                 <YouTubeSearch onAdd={handleAddSong} />
 
                 {room.creatorId === user.uid && (
-                  <div className="pt-8 flex justify-center">
+                  <div className="pt-8 flex flex-col items-center gap-2">
                     <button 
                       onClick={handleStartGame}
-                      className="px-12 py-4 bg-emerald-500 text-black font-black uppercase tracking-widest rounded-full hover:scale-105 transition-transform shadow-2xl shadow-emerald-500/20 disabled:opacity-50"
-                      disabled={!participants.every(p => p.ready)}
+                      className="px-12 py-4 bg-emerald-500 text-black font-black uppercase tracking-widest rounded-full hover:scale-105 transition-transform shadow-2xl shadow-emerald-500/20 disabled:opacity-50 disabled:hover:scale-100 disabled:shadow-none"
+                      disabled={participants.length < 2 || !participants.every(p => p.ready)}
                     >
                       Start Game
                     </button>
+                    {participants.length < 2 && (
+                      <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest">At least 2 players required</p>
+                    )}
                   </div>
                 )}
               </motion.div>
@@ -1526,12 +1529,13 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                   />
 
                   <div className="flex flex-col items-center gap-4">
-                    {room.creatorId === user.uid && allVoted && (
+                    {room.creatorId === user.uid && (
                       <div className="flex justify-center">
                         {!currentSong.revealed && room.revealMode !== 'end_of_game' ? (
                           <button 
                             onClick={handleReveal}
-                            className="px-12 py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-black uppercase tracking-widest rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-[0_0_30px_rgba(16,185,129,0.3)]"
+                            disabled={!allVoted}
+                            className="px-12 py-4 bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-black uppercase tracking-widest rounded-2xl transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] disabled:shadow-none"
                           >
                             Reveal Result
                           </button>
@@ -1540,14 +1544,16 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                             {room.currentSongIndex + 1 < room.shuffledPlaylist.length ? (
                               <button 
                                 onClick={handleNext}
-                                className="px-12 py-4 bg-white hover:bg-zinc-200 text-black font-black uppercase tracking-widest rounded-2xl transition-all hover:scale-105 active:scale-95"
+                                disabled={!currentSong.revealed && room.revealMode === 'end_of_game' && !allVoted}
+                                className="px-12 py-4 bg-white hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-black uppercase tracking-widest rounded-2xl transition-all"
                               >
                                 Next Track
                               </button>
                             ) : (
                               <button 
                                 onClick={handleNext}
-                                className="px-12 py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-black uppercase tracking-widest rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-[0_0_30px_rgba(16,185,129,0.3)]"
+                                disabled={!currentSong.revealed && room.revealMode === 'end_of_game' && !allVoted}
+                                className="px-12 py-4 bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-black uppercase tracking-widest rounded-2xl transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] disabled:shadow-none"
                               >
                                 End the Game
                               </button>
@@ -1672,7 +1678,15 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                 <div className="flex flex-col sm:flex-row gap-4 justify-center pt-2 pb-10 shrink-0">
                   {room.creatorId === user.uid && (
                     <button 
-                      onClick={() => updateDoc(doc(db, 'rooms', room.id), { status: 'waiting', currentSongIndex: 0, shuffledPlaylist: [] })}
+                      onClick={async () => {
+                        try {
+                          const pSnap = await getDocs(collection(db, 'rooms', room.id, 'participants'));
+                          await Promise.all(pSnap.docs.map(d => updateDoc(d.ref, { points: 0, ready: false })));
+                          const vSnap = await getDocs(collection(db, 'rooms', room.id, 'votes'));
+                          await Promise.all(vSnap.docs.map(d => deleteDoc(d.ref)));
+                          await updateDoc(doc(db, 'rooms', room.id), { status: 'waiting', currentSongIndex: 0, shuffledPlaylist: [] });
+                        } catch(e) { console.error(e); }
+                      }}
                       className="px-8 py-3 bg-emerald-500 text-black font-bold rounded-xl hover:bg-emerald-400 transition-colors"
                     >
                       Play Again
@@ -1810,53 +1824,40 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-emerald-500 selection:text-black">
-      <AnimatePresence mode="wait">
-        {currentRoom ? (
-          <motion.div
-            key="room"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="h-screen"
-          >
-            <RoomView 
-              room={currentRoom} 
-              user={user} 
-              onLeave={() => setCurrentRoom(null)} 
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="lobby"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-          >
-            <header className="p-4 sm:p-6 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-[#050505]/80 backdrop-blur-xl z-20">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
-                  <Music className="w-6 h-6 text-black" />
-                </div>
-                <h1 className="text-xl font-bold tracking-tighter">SONG ME</h1>
+    <div className="min-h-[100dvh] bg-[#050505] text-white font-sans selection:bg-emerald-500 selection:text-black">
+      {currentRoom ? (
+        <div className="h-[100dvh] w-full relative">
+          <RoomView 
+            room={currentRoom} 
+            user={user} 
+            onLeave={() => setCurrentRoom(null)} 
+          />
+        </div>
+      ) : (
+        <div key="lobby">
+          <header className="p-4 sm:p-6 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-[#050505]/80 backdrop-blur-xl z-20">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
+                <Music className="w-6 h-6 text-black" />
               </div>
-              <div className="flex items-center gap-4">
-                <EditableProfile user={user} onUpdate={() => setUpdateTick(t => t + 1)} />
-                <button 
-                  onClick={() => signOut(auth)}
-                  className="p-2 hover:bg-zinc-900 rounded-full text-zinc-500 hover:text-white transition-colors"
-                >
-                  <LogOut className="w-5 h-5" />
-                </button>
-              </div>
-            </header>
+              <h1 className="text-xl font-bold tracking-tighter">SONG ME</h1>
+            </div>
+            <div className="flex items-center gap-4">
+              <EditableProfile user={user} onUpdate={() => setUpdateTick(t => t + 1)} />
+              <button 
+                onClick={() => signOut(auth)}
+                className="p-2 hover:bg-zinc-900 rounded-full text-zinc-500 hover:text-white transition-colors"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            </div>
+          </header>
 
-            <main className="pb-20">
-              <Lobby user={user} onJoinRoom={setCurrentRoom} />
-            </main>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          <main className="pb-20">
+            <Lobby user={user} onJoinRoom={setCurrentRoom} />
+          </main>
+        </div>
+      )}
     </div>
   );
 }

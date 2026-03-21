@@ -630,7 +630,7 @@ const Login = () => {
             <Music className="w-10 h-10 text-black" />
           </div>
           <h1 className="text-5xl font-bold tracking-tighter">SONG ME</h1>
-          <p className="text-zinc-400 text-lg">Connect, chat, and share music in real-time.</p>
+          <p className="text-zinc-400 text-lg">Challenge your friends and guess the tracks in the ultimate music lobby.</p>
         </div>
 
         <form onSubmit={handleEmailAuth} className="space-y-4 bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800">

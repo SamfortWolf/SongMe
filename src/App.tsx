@@ -503,7 +503,7 @@ const EditableProfile = ({ user, onUpdate }: { user: FirebaseUser, onUpdate: () 
 
   return (
     <div className="flex items-center gap-4">
-      <div className="hidden sm:flex flex-col items-start">
+      <div className="flex flex-col items-start">
         {isEditing ? (
           <div className="flex items-center gap-2">
             <input 
@@ -519,7 +519,7 @@ const EditableProfile = ({ user, onUpdate }: { user: FirebaseUser, onUpdate: () 
           </div>
         ) : (
           <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditing(true)} title="Измeнить Имя">
-            <span className="text-sm font-bold">{user.displayName || 'Anonymous'}</span>
+            <span className="text-sm font-bold truncate max-w-[120px] sm:max-w-[200px]">{user.displayName || 'Anonymous'}</span>
             <Pencil className="w-3 h-3 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         )}
@@ -726,7 +726,7 @@ const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Ro
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-8">
+    <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-8">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Active Rooms</h2>
         <button 
@@ -897,6 +897,7 @@ const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Ro
 };
 
 const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: FirebaseUser, onLeave: () => void }) => {
+  const [mobileTab, setMobileTab] = useState<'playlist' | 'main' | 'chat'>('main');
   const [room, setRoom] = useState<Room>(initialRoom);
   const [messages, setMessages] = useState<Message[]>([]);
   const [songs, setSongs] = useState<Song[]>([]);
@@ -1241,9 +1242,13 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
   const allVoted = votes.length >= (room.participants?.length || 0);
 
   return (
-    <div className="h-screen flex bg-[#050505] text-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-[#050505] text-white overflow-hidden">
+      <div className="flex-1 flex flex-row min-h-0 overflow-hidden w-full relative">
       {/* Left Panel: Info & Playlist */}
-      <div className="w-80 border-r border-zinc-800 flex flex-col bg-zinc-900/20">
+      <div className={cn(
+        "border-r border-zinc-800 flex-col bg-zinc-900/20",
+        mobileTab === 'playlist' ? "flex flex-1 w-full" : "hidden md:flex md:w-80 md:flex-none"
+      )}>
         <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={onLeave} className="p-2 hover:bg-zinc-800 rounded-full transition-colors">
@@ -1308,7 +1313,10 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
       </div>
 
       {/* Center Panel: Main Stage */}
-      <div className="flex-1 flex flex-col bg-black relative">
+      <div className={cn(
+        "flex-col bg-black relative",
+        mobileTab === 'main' ? "flex flex-1 w-full" : "hidden md:flex md:flex-1"
+      )}>
         <AnimatePresence>
           {notification && (
             <motion.div 
@@ -1530,7 +1538,10 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
       </div>
 
       {/* Right Panel: Chat */}
-      <div className="w-72 border-l border-zinc-800 flex flex-col bg-zinc-900/20">
+      <div className={cn(
+        "border-zinc-800 flex-col bg-zinc-900/20",
+        mobileTab === 'chat' ? "flex flex-1 w-full" : "hidden md:flex md:w-72 md:border-l md:flex-none"
+      )}>
         <div className="p-6 border-b border-zinc-800">
           <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Live Chat</h3>
         </div>
@@ -1562,6 +1573,23 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
             </button>
           </div>
         </form>
+      </div>
+      </div>
+      
+      {/* Mobile Bottom Navigation */}
+      <div className="md:hidden flex items-center justify-around border-t border-zinc-800 bg-[#050505]/95 p-2 pb-safe z-50">
+        <button onClick={() => setMobileTab('playlist')} className={`flex flex-col items-center gap-1 p-2 ${mobileTab === 'playlist' ? 'text-emerald-500' : 'text-zinc-500'}`}>
+          <Users className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">Lobby</span>
+        </button>
+        <button onClick={() => setMobileTab('main')} className={`flex flex-col items-center gap-1 p-2 ${mobileTab === 'main' ? 'text-emerald-500' : 'text-zinc-500'}`}>
+          <Play className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">Game</span>
+        </button>
+        <button onClick={() => setMobileTab('chat')} className={`flex flex-col items-center gap-1 p-2 ${mobileTab === 'chat' ? 'text-emerald-500' : 'text-zinc-500'}`}>
+          <MessageSquare className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">Chat</span>
+        </button>
       </div>
     </div>
   );
@@ -1648,7 +1676,7 @@ export default function App() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
           >
-            <header className="p-6 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-[#050505]/80 backdrop-blur-xl z-20">
+            <header className="p-4 sm:p-6 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-[#050505]/80 backdrop-blur-xl z-20">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
                   <Music className="w-6 h-6 text-black" />

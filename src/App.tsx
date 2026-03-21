@@ -284,13 +284,18 @@ const Playlist = ({
               className={cn(
                 "w-full text-left p-2 rounded-xl border transition-all group/item cursor-pointer",
                 isCurrent ? "bg-emerald-500/10 border-emerald-500/30" : "bg-zinc-900/30 border-transparent hover:border-zinc-800",
-                isPlayed && "opacity-50 grayscale"
+                isPlayed && !song.revealed && "opacity-50 grayscale"
               )}
             >
               <div className="flex gap-3">
                 <div className="relative">
                   <img src={song.thumbnail} className="w-16 h-12 object-cover rounded-lg" alt="" />
-                  {isCurrent && <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center rounded-lg"><Play className="w-4 h-4 text-emerald-500" /></div>}
+                  {isCurrent && <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center rounded-lg"><Volume2 className="w-4 h-4 text-emerald-500" /></div>}
+                  {(isPlayed || status === 'finished' || !!song.revealed) && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg opacity-0 group-hover/item:opacity-100 transition-opacity">
+                      <Play className="w-4 h-4 text-emerald-500 ml-0.5" />
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0 flex flex-col justify-center">
                   <div className="flex items-center justify-between gap-2">
@@ -307,9 +312,9 @@ const Playlist = ({
                       </button>
                     )}
                   </div>
-                  {isPlayed && (
+                  {(isPlayed || status === 'finished' || !!song.revealed) && !isCurrent && (
                     <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest mt-1 flex items-center gap-1">
-                      <RotateCcw className="w-3 h-3" /> Replay
+                      <RotateCcw className="w-3 h-3" /> Play
                     </span>
                   )}
                   {isCurrent && (
@@ -438,15 +443,20 @@ const YouTubeSearch = ({ onAdd }: { onAdd: (video: any) => void }) => {
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleSearch} className="relative">
-        <input 
-          type="text"
-          placeholder="Search YouTube..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 pl-11 focus:outline-none focus:border-emerald-500"
-        />
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+      <form onSubmit={handleSearch} className="flex gap-2">
+        <div className="relative flex-1">
+          <input 
+            type="text"
+            placeholder="Search YouTube..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 pl-11 focus:outline-none focus:border-emerald-500"
+          />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+        </div>
+        <button type="submit" disabled={loading} className="px-6 bg-emerald-500 text-black font-bold uppercase tracking-widest text-[10px] rounded-xl hover:bg-emerald-400 disabled:opacity-50 transition-colors">
+          Search
+        </button>
       </form>
 
       <div className="grid grid-cols-1 gap-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
@@ -950,12 +960,17 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
   useEffect(() => {
     if (mobileTab === 'chat') {
       setHasUnreadMsg(false);
-    } else if (messages.length > 0) {
+    }
+  }, [mobileTab]);
+
+  useEffect(() => {
+    if (messages.length > 0 && mobileTab !== 'chat') {
       if (messages[messages.length - 1].senderId !== user.uid) {
         setHasUnreadMsg(true);
       }
     }
-  }, [messages, mobileTab, user.uid]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, user.uid]);
 
   const showNotification = (message: string, type: 'error' | 'success' = 'error') => {
     setNotification({ message, type });
@@ -1407,9 +1422,10 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
             currentUserId={user.uid}
             currentSongIndex={room.currentSongIndex}
             onPlay={async (idx) => {
-              // Only allow playing current or previous songs
-              if (room.status === 'playing' && idx <= room.currentSongIndex) {
-                setPreviewVideoId(room.shuffledPlaylist[idx].videoId);
+              const songToPlay = (room.shuffledPlaylist || [])[idx];
+              if (room.status === 'finished' || songToPlay?.revealed || (room.status === 'playing' && idx <= room.currentSongIndex)) {
+                setPreviewVideoId(songToPlay.videoId);
+                setMobileTab('main');
               }
             }}
             onDelete={room.status === 'waiting' ? handleDeleteSong : undefined}

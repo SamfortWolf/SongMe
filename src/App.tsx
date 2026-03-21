@@ -855,9 +855,15 @@ const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Ro
                     )}
                   </div>
               </div>
-              <div className="flex items-center gap-2 text-zinc-400 text-sm">
-                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                {room.status === 'playing' ? 'Game in progress' : 'Waiting for players'}
+              <div className="flex items-center gap-2 text-zinc-400 text-sm font-bold">
+                {room.status === 'finished' ? (
+                  <Trophy className="w-3 h-3 text-emerald-500" />
+                ) : (
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                )}
+                {room.status === 'waiting' ? 'Waiting for players' : 
+                 room.status === 'playing' ? 'Game in progress ✨' : 
+                 'Game finished 🏆'}
               </div>
             </div>
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl rounded-full -mr-16 -mt-16 group-hover:bg-emerald-500/10 transition-colors" />
@@ -897,7 +903,8 @@ const Lobby = ({ user, onJoinRoom }: { user: FirebaseUser, onJoinRoom: (room: Ro
 };
 
 const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: FirebaseUser, onLeave: () => void }) => {
-  const [mobileTab, setMobileTab] = useState<'playlist' | 'main' | 'chat'>('main');
+  const [mobileTab, setMobileTab] = useState<'playlist' | 'main' | 'chat'>('playlist');
+  const [hasUnreadMsg, setHasUnreadMsg] = useState(false);
   const [room, setRoom] = useState<Room>(initialRoom);
   const [messages, setMessages] = useState<Message[]>([]);
   const [songs, setSongs] = useState<Song[]>([]);
@@ -909,6 +916,16 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ message: string, type: 'error' | 'success' } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (mobileTab === 'chat') {
+      setHasUnreadMsg(false);
+    } else if (messages.length > 0) {
+      if (messages[messages.length - 1].senderId !== user.uid) {
+        setHasUnreadMsg(true);
+      }
+    }
+  }, [messages, mobileTab, user.uid]);
 
   const showNotification = (message: string, type: 'error' | 'success' = 'error') => {
     setNotification({ message, type });
@@ -1104,6 +1121,8 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
         addedBy: user.uid,
         addedByName: user.displayName || 'Anonymous'
       });
+      showNotification("Песня успешно добавлена!", "success");
+      setMobileTab('playlist');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `rooms/${room.id}/songs`);
     }
@@ -1242,7 +1261,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
   const allVoted = votes.length >= (room.participants?.length || 0);
 
   return (
-    <div className="h-screen flex flex-col bg-[#050505] text-white overflow-hidden">
+    <div className="fixed inset-0 h-[100dvh] flex flex-col bg-[#050505] text-white overflow-hidden z-[100]">
       <div className="flex-1 flex flex-row min-h-0 overflow-hidden w-full relative">
       {/* Left Panel: Info & Playlist */}
       <div className={cn(
@@ -1296,6 +1315,14 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
               }
             }}
           />
+          {room.status === 'waiting' && <div className="md:hidden pt-4 pb-2">
+            <button 
+              onClick={() => setMobileTab('main')}
+              className="w-full py-4 border-2 border-dashed border-zinc-800 rounded-2xl text-zinc-500 hover:text-white hover:border-emerald-500 transition-colors flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-xs"
+            >
+              <Plus className="w-5 h-5" /> Добавить песню
+            </button>
+          </div>}
           <Playlist 
             songs={room.status === 'waiting' ? enrichedSongs.filter(s => s.addedBy === user.uid) : room.shuffledPlaylist || []}
             status={room.status}
@@ -1507,9 +1534,9 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                         <img src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} className="w-10 h-10 rounded-full object-cover" alt="" />
                         <span className="font-bold">{p.displayName}</span>
                       </div>
-                      <div className="text-right">
-                        <p className="text-emerald-500 font-black">{p.points || 0} pts</p>
-                        <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">{Math.floor((p.points || 0) / 10)} Guessed</p>
+                      <div className="text-right flex flex-col items-end justify-center">
+                        <p className="text-emerald-500 font-black text-2xl leading-none">{Math.floor((p.points || 0) / 10)}</p>
+                        <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest mt-1">Guessed</p>
                       </div>
                     </motion.div>
                   ))}
@@ -1587,7 +1614,10 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
           <span className="text-[10px] font-bold uppercase tracking-widest">Game</span>
         </button>
         <button onClick={() => setMobileTab('chat')} className={`flex flex-col items-center gap-1 p-2 ${mobileTab === 'chat' ? 'text-emerald-500' : 'text-zinc-500'}`}>
-          <MessageSquare className="w-5 h-5" />
+          <div className="relative">
+            <MessageSquare className="w-5 h-5" />
+            {hasUnreadMsg && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#050505]" />}
+          </div>
           <span className="text-[10px] font-bold uppercase tracking-widest">Chat</span>
         </button>
       </div>

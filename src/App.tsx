@@ -393,7 +393,7 @@ const VotingStage = ({
           return (
             <button
               key={p.uid}
-              disabled={!!myVote || isRevealed}
+              disabled={isRevealed}
               onClick={() => onVote(p.uid)}
               className={cn(
                 "relative group p-4 rounded-2xl border transition-all flex flex-col items-center gap-3",
@@ -408,11 +408,13 @@ const VotingStage = ({
               </div>
               <span className="text-xs font-bold truncate w-full text-center">{p.displayName}</span>
               
-              <div className="flex gap-1 mt-1">
-                {votes.filter(v => v.votedForId === p.uid).map((v) => (
-                  <div key={v.voterId} className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                ))}
-              </div>
+              {isRevealed && (
+                <div className="flex gap-1 mt-1">
+                  {votes.filter(v => v.votedForId === p.uid).map((v) => (
+                    <div key={v.voterId} className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                  ))}
+                </div>
+              )}
             </button>
           );
         })}
@@ -953,6 +955,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
   const [allVotes, setAllVotes] = useState<Vote[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [selectedPlayerFilter, setSelectedPlayerFilter] = useState<string | null>(user.uid);
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ message: string, type: 'error' | 'success' } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1621,12 +1624,14 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                   {[...participants].sort((a, b) => (b.points || 0) - (a.points || 0)).map((p, i) => (
                     <motion.div 
                       key={p.uid}
+                      onClick={() => setSelectedPlayerFilter(prev => prev === p.uid ? null : p.uid)}
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: i * 0.1 }}
                       className={cn(
-                        "flex flex-col items-center justify-center p-3 rounded-2xl border w-24",
-                        i === 0 ? "bg-emerald-500/10 border-emerald-500" : "bg-zinc-900 border-zinc-800"
+                        "cursor-pointer flex flex-col items-center justify-center p-3 rounded-2xl border w-24 hover:scale-105 transition-transform",
+                        selectedPlayerFilter === p.uid ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-[#050505]" : "border-zinc-800",
+                        i === 0 ? "bg-emerald-500/10 border-emerald-500" : "bg-zinc-900"
                       )}
                     >
                       <img src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} className="w-10 h-10 rounded-full object-cover mb-2" alt="" />
@@ -1644,7 +1649,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                     <thead className="sticky top-0 bg-[#050505] z-10 border-b border-zinc-800 shadow-xl">
                       <tr>
                         <th className="p-4 border-r border-zinc-800 font-bold uppercase tracking-widest text-[10px] text-zinc-500 min-w-[150px]">Song</th>
-                        {participants.map(p => (
+                        {participants.filter(p => !selectedPlayerFilter || p.uid === selectedPlayerFilter).map(p => (
                           <th key={p.uid} className="p-2 border-zinc-800 text-center min-w-[80px]">
                             <img src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} className="w-6 h-6 rounded-full mx-auto" alt="" />
                             <div className="text-[9px] font-bold text-zinc-500 truncate mt-1 max-w-[80px] px-1">{p.displayName}</div>
@@ -1664,7 +1669,7 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                               </div>
                             </div>
                           </td>
-                          {participants.map(p => {
+                          {participants.filter(p => !selectedPlayerFilter || p.uid === selectedPlayerFilter).map(p => {
                             const vote = allVotes.find(v => v.songId === song.id && v.voterId === p.uid);
                             const votedForPlayer = participants.find(part => part.uid === vote?.votedForId);
                             const isCorrect = vote && vote.votedForId === song.addedBy;

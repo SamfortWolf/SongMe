@@ -25,7 +25,8 @@ import {
   User as FirebaseUser,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  getRedirectResult
 } from 'firebase/auth';
 import { auth, db, googleProvider } from './firebase';
 import { 
@@ -572,8 +573,18 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    getRedirectResult(auth).catch((err: any) => {
+      console.error('Redirect result error:', err);
+      if (err.code === 'auth/missing-initial-state' || err.message?.includes('missing initial state')) {
+        setError('Please open the link in a standard browser (Safari/Chrome) instead of this in-app browser, or use Email login.');
+      }
+    });
+  }, []);
+
   const handleGoogleLogin = async () => {
     try {
+      setError('');
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
       
@@ -583,8 +594,14 @@ const Login = () => {
         photoURL: user.photoURL || '',
         lastActive: serverTimestamp()
       }, { merge: true });
-    } catch (error) {
-      console.error('Google Login error:', error);
+    } catch (err: any) {
+      console.error('Google Login error:', err);
+      if (err.code === 'auth/popup-closed-by-user') return;
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/missing-initial-state' || err.message?.includes('missing initial state')) {
+        setError('Please open the link in a standard browser (Safari/Chrome) instead of this in-app browser, or use Email login.');
+      } else {
+        setError(err.message || 'Google authorization error');
+      }
     }
   };
 

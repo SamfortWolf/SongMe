@@ -1,20 +1,58 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <img src="./public/favicon.png" width="120" height="120" alt="Song Me Logo" />
+  <h1>SONG ME</h1>
+  <p><b>The ultimate multiplayer music guessing game!</b></p>
 </div>
 
-# Run and deploy your AI Studio app
+## 🎵 What is SONG ME?
 
-This contains everything you need to run your app locally.
+**SONG ME** is an interactive, multiplayer music party game to play with friends! In this game, players join a lobby and each person anonymously adds their favorite songs from YouTube to the shared room playlist. 
 
-View your app in AI Studio: https://ai.studio/apps/0246f87c-f390-482c-a4a0-f82104e31388
+Once the game starts, the songs are played one by one. Your goal? **Guess who added the current track!** Vote correctly to earn points and climb the leaderboard to prove you know your friends' music tastes best.
 
-## Run Locally
+### Features
+- 🎮 **Real-time Multiplayer:** Play with your friends in synchronized live rooms.
+- 🔍 **Integrated YouTube Search:** Find and add songs effortlessly without leaving the game.
+- 🤫 **Anonymous Playback:** Songs are revealed only after voting ends.
+- 🏆 **Leaderboards & Scoring:** Correct guesses earn you points.
 
-**Prerequisites:**  Node.js
+---
 
+## 🚀 How to Run Locally
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Follow these steps to get the app running on your machine:
+
+### 1. Prerequisites
+- **Node.js**: Make sure you have Node.js installed on your system.
+- **API Keys**: You will need a YouTube Data API v3 key to enable the song search feature.
+
+### 2. Installation
+Clone the repository and install the dependencies:
+```bash
+npm install
+```
+
+### 3. Environment Variables
+Create a file named `.env.local` in the root folder of the project. You must configure the following keys:
+
+```ini
+# Required for searching tracks inside the app:
+YOUTUBE_API_KEY="your_youtube_data_v3_api_key_here"
+
+# If using Gemini AI features:
+GEMINI_API_KEY="your_gemini_api_key_here"
+```
+
+### 4. Start the Application
+Start the development server:
+```bash
+npm run dev
+```
+
+The app will start on `http://localhost:3000`. Open this URL in your browser to start playing!
+
+---
+
+## 🛠 Tech Stack
+- **Frontend**: React 19, Vite, Tailwind CSS, Motion (Animations), Lucide React (Icons).
+- **Backend & Real-time Database**: Firebase (Firestore, Auth), Express Server for API handling.

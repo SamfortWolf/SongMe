@@ -1651,7 +1651,14 @@ const RoomView = ({ room: initialRoom, user, onLeave }: { room: Room, user: Fire
                         i === 0 ? "bg-emerald-500/10 border-emerald-500" : "bg-zinc-900"
                       )}
                     >
-                      <img src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} className="w-10 h-10 rounded-full object-cover mb-2" alt="" />
+                      <div className="relative mb-2">
+                        {i < 3 && (
+                          <div className="absolute -top-3 -right-3 w-7 h-7 z-10 drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]">
+                            <img src={`/rank_${i + 1}.png`} alt={`Rank ${i + 1}`} className="w-full h-full object-contain" />
+                          </div>
+                        )}
+                        <img src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} className="w-10 h-10 rounded-full object-cover border border-zinc-800" alt="" />
+                      </div>
                       <span className="text-[10px] font-bold truncate w-full text-center">{p.displayName}</span>
                       <div className="flex items-center gap-1 mt-1">
                         <span className={cn("font-black text-lg", i === 0 ? "text-emerald-500" : "text-zinc-400")}>{Math.floor((p.points || 0) / 10)}</span>
